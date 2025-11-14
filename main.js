@@ -1,31 +1,26 @@
-// main.js
-
-// --- 1. Ваші початкові змінні ---
+// --- 1. Вибір елементів ---
 const resultInput = document.getElementById('result');
 const buttons = document.querySelector('.buttons');
 
-let currentInput = '0';   // Число, що зараз вводиться
+// --- 2. Змінні стану калькулятора ---
+let currentInput = '0';   // Значення, що зараз на дисплеї
 let operator = null;      // Поточний оператор (+, -, *, /)
 let previousInput = null; // Попереднє число (перший операнд)
 
-// --- 2. Головний слухач подій (Делегування) ---
-// Ми додаємо ОДИН слухач до контейнера .buttons
-// Він буде "ловити" кліки на всіх кнопках всередині
+// НОВА ЗМІННА:
+// Цей "прапорець" показує, що ми вже натиснули оператор
+// і наступне введене число має "перезаписати" дисплей.
+let waitingForNextInput = false;
 
+// --- 3. Головний слухач подій (Делегування) ---
 buttons.addEventListener('click', (event) => {
-    const target = event.target; // Кнопка, на яку натиснули
-
-    // Переконуємося, що клікнули саме на кнопку, а не на простір між ними
+    const target = event.target; 
     if (!target.matches('button')) {
         return;
     }
 
-    // Отримуємо значення кнопки з її data-атрибуту
     const value = target.dataset.value;
 
-    // --- 3. Визначення типу кнопки та виклик функції ---
-    // Ми перевіряємо КЛАС кнопки, щоб зрозуміти її ТИП
-    
     if (target.classList.contains('operator')) {
         handleOperator(value);
     } else if (target.classList.contains('equals')) {
@@ -35,7 +30,6 @@ buttons.addEventListener('click', (event) => {
     } else if (value === '.') {
         handleDecimal();
     } else {
-        // Якщо це не оператор, не "дорівнює" і не "C" - це число
         handleNumber(value);
     }
 
@@ -43,79 +37,16 @@ buttons.addEventListener('click', (event) => {
     updateDisplay();
 });
 
-// --- 4. Допоміжні функції ---
+// --- 4. Функція для обчислень ---
+// (Винесена в окрему функцію для чистоти коду)
+function calculate(first, second, op) {
+    const prev = parseFloat(first);
+    const current = parseFloat(second);
 
-/**
- * Оновлює дисплей (input#result) поточним значенням.
- * ВАЖЛИВО: для <input> ми використовуємо .value, а не .innerText
- */
-function updateDisplay() {
-    resultInput.value = currentInput;
-}
-
-/**
- * Обробляє введення цифр (0-9).
- * @param {string} number - Натиснута цифра.
- */
-function handleNumber(number) {
-    // Якщо '0' або введено оператор, замінюємо '0' новим числом
-    if (currentInput === '0') {
-        currentInput = number;
-    } else {
-        // Інакше - додаємо цифру до кінця
-        currentInput += number;
-    }
-}
-
-/**
- * Обробляє натискання десяткової крапки (.).
- */
-function handleDecimal() {
-    // Запобігаємо додаванню кількох крапок (наприклад, "5.5.5")
-    if (!currentInput.includes('.')) {
-        currentInput += '.';
-    }
-}
-
-/**
- * Обробляє натискання оператора (+, -, *, /).
- * @param {string} nextOperator - Оператор, який натиснули.
- */
-function handleOperator(nextOperator) {
-    // Обробка ланцюгових операцій (наприклад, 5 + 5 - 2)
-    // Якщо ми вже маємо перше число і оператор, то спочатку рахуємо
-    if (previousInput !== null && operator) {
-        handleEquals();
-    }
-    
-    // Зберігаємо стан для наступного обчислення
-    previousInput = currentInput;
-    currentInput = '0'; // Готуємось до введення другого числа
-    operator = nextOperator; // Зберігаємо сам оператор
-}
-
-/**
- * Виконує обчислення при натисканні "=".
- */
-function handleEquals() {
-    // Потрібні обидва операнди та оператор
-    if (operator === null || previousInput === null) {
-        return; // Нічого не робити, якщо чогось не вистачає
-    }
+    if (isNaN(prev) || isNaN(current)) return null;
 
     let result;
-    // Перетворюємо рядки в числа для математики
-    const prev = parseFloat(previousInput);
-    const current = parseFloat(currentInput);
-
-    // Додаткова перевірка, чи це справді числа
-    if (isNaN(prev) || isNaN(current)) {
-        return;
-    }
-
-    // Виконуємо операцію відповідно до 'operator'
-    // Ми використовуємо '*' та '/' згідно з вашими data-value
-    switch (operator) {
+    switch (op) {
         case '+':
             result = prev + current;
             break;
@@ -126,33 +57,85 @@ function handleEquals() {
             result = prev * current;
             break;
         case '/':
-            // Важлива перевірка ділення на нуль!
             if (current === 0) {
                 alert("Помилка: Ділення на нуль!");
-                handleClear(); // Скидаємо калькулятор
-                return;
+                return '0'; // Повертаємо '0' у разі помилки
             }
             result = prev / current;
             break;
         default:
-            return;
+            return null;
     }
-
-    // Оновлюємо стан калькулятора результатом
-    currentInput = result.toString();
-    operator = null;
-    previousInput = null;
+    return result.toString();
 }
 
-/**
- * Скидає калькулятор до початкового стану (кнопка "C").
- */
+// --- 5. Допоміжні функції (ОНОВЛЕНА ЛОГІКА) ---
+
+function updateDisplay() {
+    resultInput.value = currentInput;
+}
+
+function handleNumber(number) {
+    // ЯКЩО ми чекаємо на нове число (тобто, щойно натиснули "+"),
+    // то це число (наприклад, "3") має ЗАМІНИТИ те, що на дисплеї.
+    if (waitingForNextInput) {
+        currentInput = number;
+        waitingForNextInput = false; // Вимикаємо прапорець
+    } else {
+        // Інакше - просто додаємо цифри
+        currentInput = (currentInput === '0') ? number : currentInput + number;
+    }
+}
+
+function handleDecimal() {
+    // Якщо ми починаємо вводити нове число з крапки
+    if (waitingForNextInput) {
+        currentInput = '0.';
+        waitingForNextInput = false;
+        return;
+    }
+    
+    if (!currentInput.includes('.')) {
+        currentInput += '.';
+    }
+}
+
+function handleOperator(nextOperator) {
+    // Якщо previousInput ще немає, просто зберігаємо поточне число
+    if (previousInput === null) {
+        previousInput = currentInput;
+    } 
+    // **ЛОГІКА ЛАНЦЮГІВ (7 + 3 - ...) **
+    // Якщо оператор вже є, значить, це *друга* операція.
+    else if (operator) {
+        const result = calculate(previousInput, currentInput, operator);
+        currentInput = result; // Показуємо проміжний результат!
+        previousInput = result; // Він стає новим першим операндом
+    }
+
+    // Готуємось до наступного введення
+    waitingForNextInput = true;
+    operator = nextOperator; // Зберігаємо новий оператор
+}
+
+function handleEquals() {
+    // Обчислюємо, лише якщо є всі компоненти
+    if (operator && previousInput !== null) {
+        currentInput = calculate(previousInput, currentInput, operator);
+        
+        // Скидаємо стан для нових обчислень
+        operator = null;
+        previousInput = null;
+        waitingForNextInput = false; // Не чекаємо, бо обчислення завершено
+    }
+}
+
 function handleClear() {
     currentInput = '0';
     operator = null;
     previousInput = null;
+    waitingForNextInput = false;
 }
 
-// --- 5. Початкове завантаження ---
-// Переконуємося, що дисплей показує '0' при першому завантаженні сторінки
+// --- 6. Початкове завантаження ---
 updateDisplay();
